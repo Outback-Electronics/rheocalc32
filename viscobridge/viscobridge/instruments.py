@@ -110,7 +110,10 @@ class SimulatedInstrument(InstrumentDriver):
             torque_pct = stress / denom if denom else 0.0
             torque_pct *= 1.0 + random.uniform(-self.noise_pct, self.noise_pct) / 100.0
         temp = self._temp + random.uniform(-0.05, 0.05)
-        return self._rpm, max(0.0, min(100.0, torque_pct)), temp
+        # No upper clamp: a real transducer can genuinely read over 100%
+        # (overload) and the app needs to be able to detect that in
+        # simulation too, same as SerialInstrument.read() below.
+        return self._rpm, max(0.0, torque_pct), temp
 
 
 # ---------------------------------------------------------------------------
