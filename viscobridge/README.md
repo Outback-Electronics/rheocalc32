@@ -55,11 +55,17 @@ scripts/install-desktop-shortcut.sh
 ```
 
 This installs a `viscobridge.desktop` entry pointing at
-`scripts/viscobridge.sh`, which creates a local `.venv` with the
-dependencies from `requirements.txt` on first launch (reused after that)
-and starts the app. Run the installer once per machine/checkout location
--- it embeds this checkout's absolute path, so re-run it if you move or
-re-clone the repo.
+`scripts/viscobridge.sh`, which runs `python -m viscobridge` with the
+system `python3` -- the dependencies from `requirements.txt` must
+already be installed for it (same as running from a terminal; no
+virtualenv is created). Run the installer once per machine/checkout
+location -- it embeds this checkout's absolute path, so re-run it if you
+move or re-clone the repo.
+
+If double-clicking the icon appears to do nothing, check
+`/tmp/viscobridge-launch.log` -- Terminal=false hides output, so
+`scripts/viscobridge.sh` writes it there and pops an error dialog
+(zenity/kdialog/xmessage, whichever is installed) if the launch fails.
 
 ## Notes on accuracy and connecting to a real DV3T / DV3 Ultra+
 
