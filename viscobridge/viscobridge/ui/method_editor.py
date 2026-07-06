@@ -3,11 +3,13 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from viscobridge import io_utils
 from viscobridge.constants import DEFAULT_SPINDLES, INSTRUMENT_MODELS, STEP_TYPES
 from viscobridge.models import Sample, TestMethod, TestStep
 from viscobridge.templates import TEST_TEMPLATES
@@ -96,6 +99,16 @@ class MethodEditor(QWidget):
         template_row.addStretch()
         steps_layout.addLayout(template_row)
 
+        method_file_row = QHBoxLayout()
+        save_method_btn = QPushButton("Save Method...")
+        load_method_btn = QPushButton("Load Method...")
+        save_method_btn.clicked.connect(self.save_method_to_file)
+        load_method_btn.clicked.connect(self.load_method_from_file)
+        method_file_row.addWidget(save_method_btn)
+        method_file_row.addWidget(load_method_btn)
+        method_file_row.addStretch()
+        steps_layout.addLayout(method_file_row)
+
         layout.addWidget(steps_box)
 
         self.add_step()
@@ -122,7 +135,9 @@ class MethodEditor(QWidget):
             self.steps_table.removeRow(row)
 
     def load_template(self):
-        steps = TEST_TEMPLATES[self.template_combo.currentText()]
+        self._set_steps(TEST_TEMPLATES[self.template_combo.currentText()])
+
+    def _set_steps(self, steps: list[TestStep]):
         self.steps_table.setRowCount(0)
         for step in steps:
             row = self.steps_table.rowCount()
@@ -135,6 +150,47 @@ class MethodEditor(QWidget):
                       step.interval_s, step.target_temp_c]
             for col, val in enumerate(values, start=1):
                 self.steps_table.setItem(row, col, QTableWidgetItem(str(val)))
+
+    def save_method_to_file(self):
+        method = self.get_method()
+        if not method.steps:
+            QMessageBox.warning(self, "No steps", "Add at least one test step before saving a method.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save Method", filter="ViscoBridge Method (*.vbm)")
+        if not path:
+            return
+        if not path.lower().endswith(".vbm"):
+            path += ".vbm"
+        io_utils.save_method(method, path)
+
+    def load_method_from_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load Method", filter="ViscoBridge Method (*.vbm)")
+        if not path:
+            return
+        method = io_utils.load_method(path)
+        self._apply_method(method)
+
+    def _apply_method(self, method: TestMethod):
+        self.method = method
+        self.method_name_edit.setText(method.name)
+
+        model_index = next(
+            (i for i, m in enumerate(INSTRUMENT_MODELS) if m.name == method.instrument_model.name), None
+        )
+        if model_index is not None:
+            self.model_combo.setCurrentIndex(model_index)
+
+        spindle_index = next(
+            (i for i, sp in enumerate(DEFAULT_SPINDLES) if sp.entry_code == method.spindle.entry_code), None
+        )
+        if spindle_index is not None:
+            self.spindle_combo.setCurrentIndex(spindle_index)
+        # Restore the saved SMC/SRC values even if they were hand-edited
+        # away from the matched spindle's catalog defaults.
+        self.src_spin.setValue(method.spindle.src)
+        self.smc_spin.setValue(method.spindle.smc)
+
+        self._set_steps(method.steps)
 
     def get_method(self) -> TestMethod:
         sp = self.spindle_combo.currentData()

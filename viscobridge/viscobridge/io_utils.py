@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import csv
+import json
 
-from viscobridge.models import Run
+from viscobridge.models import Run, TestMethod
 
 
 def save_run(run: Run, path: str) -> None:
@@ -13,6 +14,16 @@ def save_run(run: Run, path: str) -> None:
 def load_run(path: str) -> Run:
     with open(path, "r", encoding="utf-8") as f:
         return Run.from_json(f.read())
+
+
+def save_method(method: TestMethod, path: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(method.to_dict(), f, indent=2)
+
+
+def load_method(path: str) -> TestMethod:
+    with open(path, "r", encoding="utf-8") as f:
+        return TestMethod.from_dict(json.load(f))
 
 
 def export_csv(run: Run, path: str) -> None:
