@@ -170,6 +170,8 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------- instrument
     def toggle_connect(self):
         if self.instrument is not None and self.instrument.is_connected:
+            if self.timer.isActive():
+                self.stop_run()
             self.instrument.disconnect()
             self.instrument = None
             self.connect_btn.setText("Connect...")
@@ -307,7 +309,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Manual run: holding {rpm:.1f} RPM (runs until stopped)")
 
     def stop_run(self):
+        # Stopping the poll timer alone does not stop the spindle -- the
+        # instrument keeps spinning at its last commanded speed until a new
+        # speed command is sent, so Stop must explicitly command 0 RPM.
         self.timer.stop()
+        stop_error = None
+        if self.instrument is not None and self.instrument.is_connected:
+            try:
+                self.instrument.set_speed(0.0)
+            except InstrumentError as exc:
+                stop_error = str(exc)
+
         was_manual = self.manual_mode_active
         self.manual_mode_active = False
         self.current_step = None
@@ -315,7 +327,18 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.manual_start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.statusBar().showMessage("Manual run stopped" if was_manual else "Run stopped")
+
+        if stop_error:
+            self.statusBar().showMessage("Stop command failed -- spindle may still be rotating!")
+            QMessageBox.critical(
+                self, "Stop command failed",
+                "Sending the 0 RPM stop command to the instrument failed:\n"
+                f"{stop_error}\n\n"
+                "The spindle may still be rotating at its last commanded speed. "
+                "Use the instrument's front panel or power switch to stop it."
+            )
+        else:
+            self.statusBar().showMessage("Manual run stopped" if was_manual else "Run stopped")
 
     def _tick(self):
         if self.current_step is None or self.run is None or self.instrument is None:
