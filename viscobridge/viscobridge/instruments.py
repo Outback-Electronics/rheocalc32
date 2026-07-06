@@ -130,7 +130,17 @@ class SimulatedInstrument(InstrumentDriver):
 #
 # vvvv = torque transducer reading, 4 hex digits (~0400h at rest/0%,
 #        ~2B00h at 100% torque -- 0x2700 = 9984 counts full scale).
-# tttt = temperature reading, 4 hex digits (2700h = 0 degC, 40 counts/degC).
+# tttt = temperature reading, 4 hex digits, 40 counts/degC. NOTE: the
+#        Appendix G text names 0x2700 as the zero-count offset, but that
+#        figure is the *torque* full-scale count quoted two lines above --
+#        applying it to tttt gives physically impossible readings (e.g.
+#        -123 degC at room temperature). A live capture from a real unit
+#        (K/E/R sent one at a time over a single open connection, raw
+#        reply R040F13C20D -> tttt=0x13C2) decoded to a plausible ~30 degC
+#        using 0x0F0B instead, so that is the verified zero-count offset
+#        used below. Still only confirmed at one ambient data point --
+#        an ice-bath (0 degC) capture would pin this down exactly and
+#        should be done before trusting this across the full range.
 # xxxx = commanded speed in RPM * 10, as 4 hex digits.
 # ss   = 2-hex-digit status byte.
 # Port settings: 9600 baud, 8 data bits, no parity, 1 stop bit, no handshake.
