@@ -44,7 +44,7 @@ def test_set_speed_encodes_rpm_as_hex_times_ten():
 
 
 def test_read_decodes_torque_and_temperature():
-    inst = make_instrument([b"R0000874204\r"])
+    inst = make_instrument([b"R0000428704\r"])
     inst._zero_offset = 0x0400
     inst._rpm = 5.0
     rpm, torque_pct, temp_c = inst.read()
