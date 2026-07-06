@@ -65,11 +65,14 @@ class MethodEditor(QWidget):
         self.smc_spin.setRange(0.0, 1000000.0)
         self._on_spindle_changed(0)
 
+        self.container_edit = QLineEdit(self.method.container)
+
         mform.addRow("Method name", self.method_name_edit)
         mform.addRow("Instrument model", self.model_combo)
         mform.addRow("Spindle", self.spindle_combo)
         mform.addRow("SRC (1/s per RPM)", self.src_spin)
         mform.addRow("SMC (Spindle Multiplier Constant)", self.smc_spin)
+        mform.addRow("Container", self.container_edit)
         layout.addWidget(method_box)
 
         steps_box = QGroupBox("Test Steps")
@@ -173,6 +176,7 @@ class MethodEditor(QWidget):
     def _apply_method(self, method: TestMethod):
         self.method = method
         self.method_name_edit.setText(method.name)
+        self.container_edit.setText(method.container)
 
         model_index = next(
             (i for i, m in enumerate(INSTRUMENT_MODELS) if m.name == method.instrument_model.name), None
@@ -207,7 +211,7 @@ class MethodEditor(QWidget):
             name=self.method_name_edit.text(),
             instrument_model=model,
             spindle=spindle,
-            container=self.method.container,
+            container=self.container_edit.text(),
             steps=steps,
         )
 

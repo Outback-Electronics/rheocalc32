@@ -98,3 +98,10 @@ DEFAULT_SPINDLES: list[Spindle] = [
 ]
 
 STEP_TYPES = ["Speed Ramp", "Speed Hold", "Temperature Ramp", "Time Hold"]
+
+# DV3T manual (M13-167-A0415) Section II.7 "Out of Range": at 100% torque the
+# instrument's own display shows EEEE for %Torque/Viscosity/Shear Stress.
+# There is no overload bit in the RS-232 protocol (Appendix I, Table I-3) --
+# the instrument itself never auto-stops on overload, so ViscoBridge does
+# this check itself instead of relying on hardware/protocol support.
+TORQUE_OVERLOAD_PCT = 100.0

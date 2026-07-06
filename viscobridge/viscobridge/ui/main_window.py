@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from viscobridge import io_utils, report, settings
+from viscobridge.constants import TORQUE_OVERLOAD_PCT
 from viscobridge.instruments import InstrumentDriver, InstrumentError, SerialInstrument, SimulatedInstrument
 from viscobridge.models import DataPoint, Run, TestStep
 from viscobridge.ui.calibration_dialog import CalibrationDialog
@@ -374,6 +375,12 @@ class MainWindow(QMainWindow):
         self._append_row(point)
         self._update_plots()
 
+        if torque_pct >= TORQUE_OVERLOAD_PCT:
+            self.stop_run()
+            self.statusBar().showMessage(f"Run stopped: torque overload ({torque_pct:.1f}%)")
+            self._show_overload_warning(torque_pct)
+            return
+
         self.step_elapsed += step.interval_s
         self.run_elapsed += step.interval_s
         if self.step_elapsed >= step.duration_s:
@@ -383,6 +390,23 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage("Run complete")
                 return
         self.timer.setInterval(int(max(self.current_step.interval_s, 0.05) * 1000))
+
+    def _show_overload_warning(self, torque_pct: float):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("TORQUE OVERLOAD")
+        msg.setText("TORQUE OVERLOAD")
+        msg.setInformativeText(
+            f"%Torque reached {torque_pct:.1f}% (>= {TORQUE_OVERLOAD_PCT:.0f}%).\n\n"
+            "The run has been stopped and the spindle commanded to 0 RPM.\n\n"
+            "Reduce speed or use a larger spindle before starting again."
+        )
+        msg.setStyleSheet(
+            "QLabel{font-size: 20pt; font-weight: bold;} QMessageBox{min-width: 480px;}"
+        )
+        msg.setStandardButtons(QMessageBox.NoButton)
+        msg.addButton("I Understand", QMessageBox.AcceptRole)
+        msg.exec()
 
     def _append_row(self, p: DataPoint):
         row = self.data_table.rowCount()
