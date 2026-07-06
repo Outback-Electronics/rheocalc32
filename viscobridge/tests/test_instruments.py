@@ -78,3 +78,29 @@ def test_read_rejects_malformed_reply():
     inst = make_instrument([b"XX\r"])
     with pytest.raises(Exception):
         inst.read()
+
+
+def test_read_raw_temp_counts_returns_uncalibrated_counts():
+    inst = make_instrument([b"R040F13C20D\r"])
+    assert inst.read_raw_temp_counts() == 0x13C2
+
+
+def test_temp_calibration_is_settable_and_used_by_read():
+    # Simulates applying a calibration captured from a known reference
+    # temperature (e.g. an ice bath): zero_counts should be whatever raw
+    # count corresponds to 0 degC, and slope can be recalibrated too.
+    inst = make_instrument([b"R040F13C20D\r"])
+    inst._zero_offset = 0x0400
+    inst.temp_zero_counts = 0x1000
+    inst.temp_counts_per_degree = 20.0
+    assert inst.temp_zero_counts == 0x1000
+    assert inst.temp_counts_per_degree == 20.0
+    _, _, temp_c = inst.read()
+    tttt = 0x13C2
+    assert temp_c == pytest.approx((tttt - 0x1000) / 20.0)
+
+
+def test_constructor_accepts_persisted_calibration():
+    inst = SerialInstrument("COM_TEST", temp_zero_counts=0x1000, temp_counts_per_degree=41.5)
+    assert inst.temp_zero_counts == 0x1000
+    assert inst.temp_counts_per_degree == 41.5

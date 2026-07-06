@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from viscobridge import io_utils, report
+from viscobridge import io_utils, report, settings
 from viscobridge.instruments import InstrumentDriver, InstrumentError, SerialInstrument, SimulatedInstrument
 from viscobridge.models import DataPoint, Run, TestStep
 from viscobridge.ui.calibration_dialog import CalibrationDialog
@@ -27,6 +27,7 @@ from viscobridge.ui.connect_dialog import ConnectDialog
 from viscobridge.ui.fit_dialog import FitDialog
 from viscobridge.ui.method_editor import MethodEditor
 from viscobridge.ui.plot_widget import PlotWidget
+from viscobridge.ui.temp_calibration_dialog import TempCalibrationDialog
 from viscobridge.ui.temp_fit_dialog import TempFitDialog
 
 DATA_COLUMNS = ["Time (s)", "RPM", "Torque (%)", "Temp (C)", "Shear Rate (1/s)",
@@ -135,6 +136,7 @@ class MainWindow(QMainWindow):
 
         instrument_menu = self.menuBar().addMenu("&Instrument")
         instrument_menu.addAction("Calibration Check (30s, no spindle)...", self.open_calibration_dialog)
+        instrument_menu.addAction("Temperature Calibration...", self.open_temp_calibration_dialog)
 
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction("About", self._show_about)
@@ -171,7 +173,11 @@ class MainWindow(QMainWindow):
             if not port:
                 QMessageBox.warning(self, "No port", "Select or enter a serial port.")
                 return
-            self.instrument = SerialInstrument(port, baudrate=dlg.baudrate())
+            self.instrument = SerialInstrument(
+                port, baudrate=dlg.baudrate(),
+                temp_zero_counts=settings.load_temp_zero_counts(),
+                temp_counts_per_degree=settings.load_temp_counts_per_degree(),
+            )
             status = f"Connected to {port} @ {dlg.baudrate()} baud"
 
         try:
@@ -336,6 +342,27 @@ class MainWindow(QMainWindow):
         dlg.exec()
         if dlg.last_record is not None:
             self.last_calibration_record = dlg.last_record
+
+    def open_temp_calibration_dialog(self):
+        if not isinstance(self.instrument, SerialInstrument) or not self.instrument.is_connected:
+            QMessageBox.warning(
+                self, "Not connected",
+                "Connect to a real instrument (not simulated) before calibrating temperature.",
+            )
+            return
+        if self.timer.isActive():
+            QMessageBox.warning(self, "Run in progress", "Stop the current run before calibrating temperature.")
+            return
+        dlg = TempCalibrationDialog(self.instrument, parent=self)
+        dlg.exec()
+        if dlg.new_zero_counts is not None:
+            self.instrument.temp_zero_counts = dlg.new_zero_counts
+            self.instrument.temp_counts_per_degree = dlg.new_counts_per_degree
+            settings.save_temp_calibration(dlg.new_zero_counts, dlg.new_counts_per_degree)
+            self.statusBar().showMessage(
+                f"Temperature calibration saved: zero={dlg.new_zero_counts} counts, "
+                f"{dlg.new_counts_per_degree:.3f} counts/degC"
+            )
 
     # ----------------------------------------------------------- analysis
     def open_fit_dialog(self):
