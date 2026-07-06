@@ -130,7 +130,17 @@ class SimulatedInstrument(InstrumentDriver):
 #
 # vvvv = torque transducer reading, 4 hex digits (~0400h at rest/0%,
 #        ~2B00h at 100% torque -- 0x2700 = 9984 counts full scale).
-# tttt = temperature reading, 4 hex digits (2700h = 0 degC, 40 counts/degC).
+# tttt = temperature reading, 4 hex digits, 40 counts/degC. NOTE: the
+#        Appendix G text names 0x2700 as the zero-count offset, but that
+#        figure is the *torque* full-scale count quoted two lines above --
+#        applying it to tttt gives physically impossible readings (e.g.
+#        -123 degC at room temperature). A live capture from a real unit
+#        (K/E/R sent one at a time over a single open connection, raw
+#        reply R040F13C20D -> tttt=0x13C2) decoded to a plausible ~30 degC
+#        using 0x0F0B instead, so that is the verified zero-count offset
+#        used below. Still only confirmed at one ambient data point --
+#        an ice-bath (0 degC) capture would pin this down exactly and
+#        should be done before trusting this across the full range.
 # xxxx = commanded speed in RPM * 10, as 4 hex digits.
 # ss   = 2-hex-digit status byte.
 # Port settings: 9600 baud, 8 data bits, no parity, 1 stop bit, no handshake.
@@ -142,7 +152,9 @@ class SimulatedInstrument(InstrumentDriver):
 # ---------------------------------------------------------------------------
 
 TORQUE_FULL_SCALE_COUNTS = 0x2B00 - 0x0400  # ~9984 counts == 100% torque
-TEMP_ZERO_COUNTS = 0x0F0B  # counts at 0 degC
+TEMP_ZERO_COUNTS = 0x0F0B  # counts at 0 degC -- fallback default; verified
+# per-unit values from an ice-bath calibration are persisted and override
+# this (see viscobridge.settings and SerialInstrument.temp_zero_counts).
 TEMP_COUNTS_PER_DEGREE = 40.0
 
 
@@ -151,7 +163,9 @@ class SerialInstrument(InstrumentDriver):
     (directly, or via a USB-to-RS232 adapter), using Brookfield's
     documented Appendix G command set."""
 
-    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 1.0):
+    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 1.0,
+                 temp_zero_counts: int = TEMP_ZERO_COUNTS,
+                 temp_counts_per_degree: float = TEMP_COUNTS_PER_DEGREE):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
@@ -159,6 +173,29 @@ class SerialInstrument(InstrumentDriver):
         self._zero_offset = 0x0400
         self._rpm = 0.0
         self._status = "00"
+        self._temp_zero_counts = temp_zero_counts
+        self._temp_counts_per_degree = temp_counts_per_degree
+
+    @property
+    def temp_zero_counts(self) -> int:
+        """Raw tttt counts corresponding to 0 degC, as determined by the
+        last temperature calibration (or the built-in fallback if none has
+        been run for this unit)."""
+        return self._temp_zero_counts
+
+    @temp_zero_counts.setter
+    def temp_zero_counts(self, counts: int) -> None:
+        self._temp_zero_counts = counts
+
+    @property
+    def temp_counts_per_degree(self) -> float:
+        """Raw tttt counts per degree C, as determined by the last
+        multi-point temperature calibration (or the built-in fallback)."""
+        return self._temp_counts_per_degree
+
+    @temp_counts_per_degree.setter
+    def temp_counts_per_degree(self, counts_per_degree: float) -> None:
+        self._temp_counts_per_degree = counts_per_degree
 
     @staticmethod
     def list_ports() -> list[str]:
@@ -241,7 +278,8 @@ class SerialInstrument(InstrumentDriver):
         # DV-III Ultra / DV3 Ultra+ -- see module docstring above.
         pass
 
-    def read(self) -> tuple[float, float, float]:
+    def _read_raw(self) -> tuple[int, int]:
+        """Sends R and returns the raw (vvvv, tttt) counts, unconverted."""
         reply = self._send("R")
         if not reply.startswith("R") or len(reply) < 11:
             raise InstrumentError(
@@ -250,7 +288,18 @@ class SerialInstrument(InstrumentDriver):
         vvvv = int(reply[1:5], 16)
         tttt = int(reply[5:9], 16)
         self._status = reply[9:11]
+        return vvvv, tttt
+
+    def read_raw_temp_counts(self) -> int:
+        """Returns the raw tttt temperature counts with no zero-offset
+        applied -- used by the temperature calibration dialog to capture
+        a reading at a known reference temperature."""
+        _vvvv, tttt = self._read_raw()
+        return tttt
+
+    def read(self) -> tuple[float, float, float]:
+        vvvv, tttt = self._read_raw()
         torque_pct = (vvvv - self._zero_offset) / TORQUE_FULL_SCALE_COUNTS * 100.0
-        temp_c = (tttt - TEMP_ZERO_COUNTS) / TEMP_COUNTS_PER_DEGREE
+        temp_c = (tttt - self._temp_zero_counts) / self._temp_counts_per_degree
         return self._rpm, max(0.0, torque_pct), temp_c
 

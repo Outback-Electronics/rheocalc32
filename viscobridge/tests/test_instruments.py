@@ -53,11 +53,54 @@ def test_read_decodes_torque_and_temperature():
     expected_torque = (vvvv - 0x0400) / (0x2B00 - 0x0400) * 100.0
     assert torque_pct == max(0.0, expected_torque)
     tttt = 0x4287
-    expected_temp = (tttt - 0x2700) / 40.0
+    expected_temp = (tttt - 0x0F0B) / 40.0
     assert temp_c == pytest.approx(expected_temp)
+
+
+def test_read_decodes_temperature_from_live_capture():
+    # Real reply captured from a physical DV3 Ultra+ at room temperature
+    # via scripts/probe_instrument.py (single open connection, K/E/R sent
+    # one at a time). tttt=0x13C2 decodes to ~30 degC using the verified
+    # TEMP_ZERO_COUNTS -- decoding with the Appendix G torque-count figure
+    # (0x2700) instead gives an impossible -123 degC, which is why that
+    # figure was wrong for this field.
+    inst = make_instrument([b"R040F13C20D\r"])
+    inst._zero_offset = 0x0400
+    inst._rpm = 0.0
+    _, _, temp_c = inst.read()
+    tttt = 0x13C2
+    expected_temp = (tttt - 0x0F0B) / 40.0
+    assert temp_c == pytest.approx(expected_temp)
+    assert temp_c == pytest.approx(30.175, abs=0.01)
 
 
 def test_read_rejects_malformed_reply():
     inst = make_instrument([b"XX\r"])
     with pytest.raises(Exception):
         inst.read()
+
+
+def test_read_raw_temp_counts_returns_uncalibrated_counts():
+    inst = make_instrument([b"R040F13C20D\r"])
+    assert inst.read_raw_temp_counts() == 0x13C2
+
+
+def test_temp_calibration_is_settable_and_used_by_read():
+    # Simulates applying a calibration captured from a known reference
+    # temperature (e.g. an ice bath): zero_counts should be whatever raw
+    # count corresponds to 0 degC, and slope can be recalibrated too.
+    inst = make_instrument([b"R040F13C20D\r"])
+    inst._zero_offset = 0x0400
+    inst.temp_zero_counts = 0x1000
+    inst.temp_counts_per_degree = 20.0
+    assert inst.temp_zero_counts == 0x1000
+    assert inst.temp_counts_per_degree == 20.0
+    _, _, temp_c = inst.read()
+    tttt = 0x13C2
+    assert temp_c == pytest.approx((tttt - 0x1000) / 20.0)
+
+
+def test_constructor_accepts_persisted_calibration():
+    inst = SerialInstrument("COM_TEST", temp_zero_counts=0x1000, temp_counts_per_degree=41.5)
+    assert inst.temp_zero_counts == 0x1000
+    assert inst.temp_counts_per_degree == 41.5
