@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 import numpy as np
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
+    QDoubleSpinBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -46,6 +48,7 @@ class MainWindow(QMainWindow):
         self.current_step: TestStep | None = None
         self.step_elapsed = 0.0
         self.run_elapsed = 0.0
+        self.manual_mode_active = False
         self.last_fit_result = None
         self.instrument_id = ""
         self.zero_offset_counts: int | None = None
@@ -98,6 +101,20 @@ class MainWindow(QMainWindow):
         self.report_btn.clicked.connect(self.export_report)
         self.compare_btn.clicked.connect(self.open_compare_dialog)
         self.stop_btn.setEnabled(False)
+
+        manual_row = QHBoxLayout()
+        manual_row.addWidget(QLabel("Manual run speed (RPM):"))
+        self.manual_speed_spin = QDoubleSpinBox()
+        self.manual_speed_spin.setRange(0.1, 250.0)
+        self.manual_speed_spin.setValue(10.0)
+        self.manual_speed_spin.setDecimals(1)
+        manual_row.addWidget(self.manual_speed_spin)
+        self.manual_start_btn = QPushButton("Start Manual Run (runs until stopped)")
+        manual_row.addWidget(self.manual_start_btn)
+        manual_row.addStretch()
+        right_layout.addLayout(manual_row)
+
+        self.manual_start_btn.clicked.connect(self.start_manual_run)
 
         dashboard = QWidget()
         grid = QGridLayout(dashboard)
@@ -228,7 +245,9 @@ class MainWindow(QMainWindow):
 
         self._advance_step()
         self.timer.start(int(self.current_step.interval_s * 1000) if self.current_step else 1000)
+        self.manual_mode_active = False
         self.start_btn.setEnabled(False)
+        self.manual_start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
 
     def _advance_step(self):
@@ -240,11 +259,63 @@ class MainWindow(QMainWindow):
         if self.current_step.target_temp_c is not None and self.instrument:
             self.instrument.set_temperature(self.current_step.target_temp_c)
 
+    def start_manual_run(self):
+        # Unconditional run: holds a single fixed speed with no duration
+        # limit, so it never auto-stops (unlike a method run's step queue) -
+        # only an explicit Stop Run click ends it.
+        if self.instrument is None or not self.instrument.is_connected:
+            QMessageBox.warning(self, "Not connected", "Connect to an instrument before starting a manual run.")
+            return
+        if self.timer.isActive():
+            QMessageBox.warning(self, "Run in progress", "Stop the current run before starting a manual run.")
+            return
+
+        rpm = self.manual_speed_spin.value()
+        method = self.method_editor.get_method()
+        manual_step = TestStep(
+            step_type="Speed Hold",
+            start_speed_rpm=rpm,
+            end_speed_rpm=rpm,
+            duration_s=float("inf"),
+            interval_s=1.0,
+        )
+        method.steps = [manual_step]
+
+        sample = self.method_editor.get_sample()
+        self.run = Run(
+            method=method,
+            sample=sample,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            instrument_id=self.instrument_id,
+            zero_offset_counts=self.zero_offset_counts,
+            calibration_check=self.last_calibration_record,
+        )
+        self.step_queue = []
+        self.current_step = manual_step
+        self.step_elapsed = 0.0
+        self.run_elapsed = 0.0
+        self.last_fit_result = None
+        self.data_table.setRowCount(0)
+        for plot in (self.viscosity_plot, self.stress_plot, self.viscosity_time_plot, self.temp_plot):
+            plot.clear()
+
+        self.manual_mode_active = True
+        self.timer.start(int(manual_step.interval_s * 1000))
+        self.start_btn.setEnabled(False)
+        self.manual_start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.statusBar().showMessage(f"Manual run: holding {rpm:.1f} RPM (runs until stopped)")
+
     def stop_run(self):
         self.timer.stop()
+        was_manual = self.manual_mode_active
+        self.manual_mode_active = False
+        self.current_step = None
+        self.step_queue = []
         self.start_btn.setEnabled(True)
+        self.manual_start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.statusBar().showMessage("Run stopped")
+        self.statusBar().showMessage("Manual run stopped" if was_manual else "Run stopped")
 
     def _tick(self):
         if self.current_step is None or self.run is None or self.instrument is None:
