@@ -45,6 +45,22 @@ pip install -r requirements.txt
 python -m viscobridge
 ```
 
+## Desktop shortcut (Linux)
+
+To get a clickable icon (application menu + Desktop) instead of running
+from a terminal each time:
+
+```bash
+scripts/install-desktop-shortcut.sh
+```
+
+This installs a `viscobridge.desktop` entry pointing at
+`scripts/viscobridge.sh`, which creates a local `.venv` with the
+dependencies from `requirements.txt` on first launch (reused after that)
+and starts the app. Run the installer once per machine/checkout location
+-- it embeds this checkout's absolute path, so re-run it if you move or
+re-clone the repo.
+
 ## Notes on accuracy and connecting to a real DV3T / DV3 Ultra+
 
 The spindle SMC/SRC values and instrument-model TK (torque) constants
