@@ -248,7 +248,7 @@ class SerialInstrument(InstrumentDriver):
                 f"Unexpected Retrieve reply: {reply!r}. Expected <R><vvvv><tttt><ss>."
             )
         vvvv = int(reply[1:5], 16)
-        tttt = int(reply[5:9], 16)
+        tttt = int(reply[7:9] + reply[5:7], 16)
         self._status = reply[9:11]
         torque_pct = (vvvv - self._zero_offset) / TORQUE_FULL_SCALE_COUNTS * 100.0
         temp_c = (tttt - TEMP_ZERO_COUNTS) / TEMP_COUNTS_PER_DEGREE
