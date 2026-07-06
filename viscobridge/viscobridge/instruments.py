@@ -142,7 +142,7 @@ class SimulatedInstrument(InstrumentDriver):
 # ---------------------------------------------------------------------------
 
 TORQUE_FULL_SCALE_COUNTS = 0x2B00 - 0x0400  # ~9984 counts == 100% torque
-TEMP_ZERO_COUNTS = 0x2700  # counts at 0 degC
+TEMP_ZERO_COUNTS = 0x0F0B  # counts at 0 degC
 TEMP_COUNTS_PER_DEGREE = 40.0
 
 
